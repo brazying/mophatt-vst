@@ -2,6 +2,7 @@
 
 #include <JuceHeader.h>
 #include "ExbBank.h"
+#include "EblSampler.h"
 #include <vector>
 
 class MoPhattVSTAudioProcessor : public juce::AudioProcessor
@@ -22,7 +23,7 @@ public:
     bool acceptsMidi() const override { return true; }
     bool producesMidi() const override { return false; }
     bool isMidiEffect() const override { return false; }
-    double getTailLengthSeconds() const override { return 0.0; }
+    double getTailLengthSeconds() const override { return 0.2; }
 
     int getNumPrograms() override { return 1; }
     int getCurrentProgram() override { return 0; }
@@ -34,9 +35,17 @@ public:
     void setStateInformation(const void* data, int sizeInBytes) override;
 
     bool addBank(const juce::File& file, juce::String& message);
+    bool loadEblPreview(const juce::File& file, juce::String& message);
     const std::vector<ExbBankInfo>& getBanks() const { return banks; }
+    juce::String getPreviewName() const { return previewName; }
+    juce::String getPreviewInfo() const { return previewInfo; }
 
 private:
     std::vector<ExbBankInfo> banks;
+    juce::Synthesiser synth;
+    juce::File previewFile;
+    juce::String previewName;
+    juce::String previewInfo;
+
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(MoPhattVSTAudioProcessor)
 };
