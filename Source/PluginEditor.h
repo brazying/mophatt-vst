@@ -16,19 +16,22 @@ public:
 
 private:
     void chooseBank();
-    void chooseEbl();
-    void loadSelectedPreset();
     void refreshBankList();
+    void refreshPresetList();
+    void loadSelectedPreset();
+    void stepPreset(int direction);
 
     MoPhattVSTAudioProcessor& processor;
-    juce::TextButton addBankButton { "ADD BANK" };
-    juce::TextButton loadEblButton { "LOAD EBL PREVIEW" };
-    juce::TextButton loadPresetButton { "LOAD PRESET" };
+    juce::TextButton addBankButton { "+  ADD BANK" };
+    juce::ComboBox bankSelector;
     juce::ComboBox presetSelector;
-    juce::TextEditor bankList;
+    juce::TextButton previousPresetButton { "<" };
+    juce::TextButton nextPresetButton { ">" };
     juce::Label title { {}, "MO'PHATT" };
     juce::Label subtitle { {}, "E-MU BANK SAMPLER  /  VST3" };
-    juce::Label previewLabel { {}, "NO PRESET OR SAMPLE LOADED" };
+    juce::Label bankLabel { {}, "BANK" };
+    juce::Label presetLabel { {}, "PRESET" };
+    juce::Label statusLabel { {}, "LOAD AN EXB BANK TO GET STARTED" };
     std::vector<std::pair<int, int>> presetItems;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(MoPhattVSTAudioProcessorEditor)
