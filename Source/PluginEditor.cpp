@@ -3,7 +3,7 @@
 MoPhattVSTAudioProcessorEditor::MoPhattVSTAudioProcessorEditor(MoPhattVSTAudioProcessor& p)
     : AudioProcessorEditor(&p), processor(p)
 {
-    setSize(760, 540);
+    setSize(620, 270);
 
     title.setFont(juce::Font(27.0f, juce::Font::bold));
     title.setColour(juce::Label::textColourId, juce::Colours::white);
@@ -16,72 +16,97 @@ MoPhattVSTAudioProcessorEditor::MoPhattVSTAudioProcessorEditor(MoPhattVSTAudioPr
     addBankButton.onClick = [this] { chooseBank(); };
     addBankButton.setColour(juce::TextButton::buttonColourId, juce::Colour(0xffd6ff3f));
     addBankButton.setColour(juce::TextButton::textColourOffId, juce::Colour(0xff111111));
+    addBankButton.setColour(juce::TextButton::buttonOnColourId, juce::Colour(0xffd6ff3f));
     addAndMakeVisible(addBankButton);
 
-    loadEblButton.onClick = [this] { chooseEbl(); };
-    loadEblButton.setColour(juce::TextButton::buttonColourId, juce::Colour(0xff303640));
-    loadEblButton.setColour(juce::TextButton::textColourOffId, juce::Colours::white);
-    addAndMakeVisible(loadEblButton);
+    auto styleCombo = [](juce::ComboBox& combo)
+    {
+        combo.setColour(juce::ComboBox::backgroundColourId, juce::Colour(0xff17191e));
+        combo.setColour(juce::ComboBox::textColourId, juce::Colours::white);
+        combo.setColour(juce::ComboBox::outlineColourId, juce::Colour(0xff30343c));
+        combo.setColour(juce::ComboBox::arrowColourId, juce::Colour(0xffd6ff3f));
+    };
 
-    loadPresetButton.onClick = [this] { loadSelectedPreset(); };
-    loadPresetButton.setColour(juce::TextButton::buttonColourId, juce::Colour(0xffd6ff3f));
-    loadPresetButton.setColour(juce::TextButton::textColourOffId, juce::Colour(0xff111111));
-    addAndMakeVisible(loadPresetButton);
-
+    styleCombo(bankSelector);
+    styleCombo(presetSelector);
+    bankSelector.setTextWhenNothingSelected("Choose a bank");
     presetSelector.setTextWhenNothingSelected("Choose a preset");
-    presetSelector.setColour(juce::ComboBox::backgroundColourId, juce::Colour(0xff17191e));
-    presetSelector.setColour(juce::ComboBox::textColourId, juce::Colours::white);
-    presetSelector.setColour(juce::ComboBox::outlineColourId, juce::Colour(0xff30343c));
+    bankSelector.onChange = [this] { refreshPresetList(); };
+    presetSelector.onChange = [this] { loadSelectedPreset(); };
+    addAndMakeVisible(bankSelector);
     addAndMakeVisible(presetSelector);
 
-    previewLabel.setFont(juce::Font(12.0f));
-    previewLabel.setColour(juce::Label::textColourId, juce::Colour(0xffd6ff3f));
-    addAndMakeVisible(previewLabel);
+    previousPresetButton.onClick = [this] { stepPreset(-1); };
+    nextPresetButton.onClick = [this] { stepPreset(1); };
+    for (auto* button : { &previousPresetButton, &nextPresetButton })
+    {
+        button->setColour(juce::TextButton::buttonColourId, juce::Colour(0xff303640));
+        button->setColour(juce::TextButton::textColourOffId, juce::Colours::white);
+        addAndMakeVisible(*button);
+    }
 
-    bankList.setMultiLine(true);
-    bankList.setReadOnly(true);
-    bankList.setScrollbarsShown(true);
-    bankList.setColour(juce::TextEditor::backgroundColourId, juce::Colour(0xff17191e));
-    bankList.setColour(juce::TextEditor::textColourId, juce::Colours::white);
-    bankList.setColour(juce::TextEditor::outlineColourId, juce::Colour(0xff30343c));
-    addAndMakeVisible(bankList);
+    bankLabel.setFont(juce::Font(10.0f, juce::Font::bold));
+    bankLabel.setColour(juce::Label::textColourId, juce::Colour(0xff9298a3));
+    addAndMakeVisible(bankLabel);
+
+    presetLabel.setFont(juce::Font(10.0f, juce::Font::bold));
+    presetLabel.setColour(juce::Label::textColourId, juce::Colour(0xff9298a3));
+    addAndMakeVisible(presetLabel);
+
+    statusLabel.setFont(juce::Font(12.0f));
+    statusLabel.setColour(juce::Label::textColourId, juce::Colour(0xffd6ff3f));
+    addAndMakeVisible(statusLabel);
 
     refreshBankList();
 }
 
 void MoPhattVSTAudioProcessorEditor::refreshBankList()
 {
-    juce::String text;
+    bankSelector.clear();
+    for (int i = 0; i < static_cast<int>(processor.getBanks().size()); ++i)
+    {
+        const auto& bank = processor.getBanks()[static_cast<size_t>(i)];
+        bankSelector.addItem(bank.bankName, i + 1);
+    }
+
+    if (processor.getBanks().empty())
+    {
+        presetSelector.clear();
+        presetItems.clear();
+        statusLabel.setText("LOAD AN EXB BANK TO GET STARTED", juce::dontSendNotification);
+        return;
+    }
+
+    bankSelector.setSelectedId(bankSelector.getNumItems(), juce::dontSendNotification);
+    refreshPresetList();
+}
+
+void MoPhattVSTAudioProcessorEditor::refreshPresetList()
+{
     presetSelector.clear();
     presetItems.clear();
 
-    int itemId = 1;
-    int bankIndex = 0;
-    for (const auto& bank : processor.getBanks())
+    const int bankIndex = bankSelector.getSelectedId() - 1;
+    if (!juce::isPositiveAndBelow(bankIndex, static_cast<int>(processor.getBanks().size())))
     {
-        text += bank.bankName + "  [" + juce::String(static_cast<int>(bank.presets.size()))
-             + " presets / " + juce::String(bank.sampleCount) + " sample links]\n";
-
-        for (int presetIndex = 0; presetIndex < static_cast<int>(bank.presets.size()); ++presetIndex)
-        {
-            presetSelector.addItem(bank.bankName + " / " + bank.presets[static_cast<size_t>(presetIndex)].name,
-                                   itemId++);
-            presetItems.emplace_back(bankIndex, presetIndex);
-        }
-        ++bankIndex;
+        statusLabel.setText("SELECT A BANK", juce::dontSendNotification);
+        return;
     }
 
-    if (text.isEmpty())
-        text = "No EXB banks loaded.\n\nClick ADD BANK to import an Emulator X bank.";
-    bankList.setText(text, juce::dontSendNotification);
+    const auto& bank = processor.getBanks()[static_cast<size_t>(bankIndex)];
+    for (int i = 0; i < static_cast<int>(bank.presets.size()); ++i)
+    {
+        presetSelector.addItem(bank.presets[static_cast<size_t>(i)].name, i + 1);
+        presetItems.emplace_back(bankIndex, i);
+    }
 
-    if (!presetItems.empty())
-        presetSelector.setSelectedId(1, juce::dontSendNotification);
+    if (presetItems.empty())
+    {
+        statusLabel.setText("NO PRESETS FOUND IN THIS BANK", juce::dontSendNotification);
+        return;
+    }
 
-    const auto preview = processor.getPreviewName();
-    previewLabel.setText(preview.isEmpty() ? "NO PRESET OR SAMPLE LOADED"
-                                           : preview + "  /  " + processor.getPreviewInfo(),
-                        juce::dontSendNotification);
+    presetSelector.setSelectedId(1, juce::sendNotification);
 }
 
 void MoPhattVSTAudioProcessorEditor::chooseBank()
@@ -99,46 +124,39 @@ void MoPhattVSTAudioProcessorEditor::chooseBank()
 
             juce::String message;
             if (processor.addBank(file, message))
+            {
                 refreshBankList();
+                statusLabel.setText(message, juce::dontSendNotification);
+            }
             else
-                bankList.setText(message, juce::dontSendNotification);
-        });
-}
-
-void MoPhattVSTAudioProcessorEditor::chooseEbl()
-{
-    auto chooser = std::make_shared<juce::FileChooser>(
-        "Select an E-MU sample", juce::File{}, "*.ebl");
-
-    chooser->launchAsync(juce::FileBrowserComponent::openMode
-                       | juce::FileBrowserComponent::canSelectFiles,
-        [this, chooser](const juce::FileChooser& fc)
-        {
-            const auto file = fc.getResult();
-            if (file == juce::File{})
-                return;
-
-            juce::String message;
-            if (processor.loadEblPreview(file, message))
-                refreshBankList();
-            else
-                previewLabel.setText(message, juce::dontSendNotification);
+            {
+                statusLabel.setText(message, juce::dontSendNotification);
+            }
         });
 }
 
 void MoPhattVSTAudioProcessorEditor::loadSelectedPreset()
 {
-    const int selectedId = presetSelector.getSelectedId();
-    const int index = selectedId - 1;
+    const int index = presetSelector.getSelectedId() - 1;
     if (!juce::isPositiveAndBelow(index, static_cast<int>(presetItems.size())))
         return;
 
     const auto selection = presetItems[static_cast<size_t>(index)];
     juce::String message;
-    if (processor.loadPreset(selection.first, selection.second, message))
-        refreshBankList();
-    else
-        previewLabel.setText(message, juce::dontSendNotification);
+    processor.loadPreset(selection.first, selection.second, message);
+    statusLabel.setText(message, juce::dontSendNotification);
+}
+
+void MoPhattVSTAudioProcessorEditor::stepPreset(int direction)
+{
+    const int count = presetSelector.getNumItems();
+    if (count == 0)
+        return;
+
+    const int current = presetSelector.getSelectedId();
+    const int next = juce::jlimit(1, count, current + direction);
+    if (next != current)
+        presetSelector.setSelectedId(next, juce::sendNotification);
 }
 
 void MoPhattVSTAudioProcessorEditor::paint(juce::Graphics& g)
@@ -154,10 +172,15 @@ void MoPhattVSTAudioProcessorEditor::resized()
 {
     title.setBounds(24, 20, 300, 38);
     subtitle.setBounds(26, 59, 350, 22);
-    addBankButton.setBounds(getWidth() - 430, 34, 125, 38);
-    loadEblButton.setBounds(getWidth() - 294, 34, 140, 38);
-    loadPresetButton.setBounds(getWidth() - 143, 34, 119, 38);
-    presetSelector.setBounds(24, 108, getWidth() - 48, 34);
-    previewLabel.setBounds(26, 150, getWidth() - 52, 24);
-    bankList.setBounds(24, 184, getWidth() - 48, getHeight() - 208);
+    addBankButton.setBounds(getWidth() - 158, 30, 134, 36);
+
+    bankLabel.setBounds(26, 111, 80, 16);
+    bankSelector.setBounds(24, 130, getWidth() - 48, 34);
+
+    presetLabel.setBounds(26, 178, 80, 16);
+    previousPresetButton.setBounds(24, 198, 38, 38);
+    presetSelector.setBounds(70, 198, getWidth() - 140, 38);
+    nextPresetButton.setBounds(getWidth() - 62, 198, 38, 38);
+
+    statusLabel.setBounds(26, 242, getWidth() - 52, 20);
 }
