@@ -2,6 +2,7 @@
 
 #include <JuceHeader.h>
 #include "EblSample.h"
+#include "ExbBank.h"
 #include <memory>
 #include <utility>
 
