@@ -13,7 +13,7 @@ public:
                     int keyLowIn = 0, int keyHighIn = 127,
                     int velocityLowIn = 0, int velocityHighIn = 127,
                     int rootNoteIn = 60,
-                    ExbVoiceParameters parametersIn = {})
+                    std::shared_ptr<const ExbVoiceParameters> parametersIn = {})
         : data(std::move(dataIn)),
           keyLow(keyLowIn), keyHigh(keyHighIn),
           velocityLow(velocityLowIn), velocityHigh(velocityHighIn),
@@ -32,7 +32,7 @@ public:
     int velocityLow = 0;
     int velocityHigh = 127;
     int rootNote = 60;
-    ExbVoiceParameters parameters;
+    std::shared_ptr<const ExbVoiceParameters> parameters;
 };
 
 class EblSamplerVoice : public juce::SynthesiserVoice
