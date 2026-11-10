@@ -11,11 +11,12 @@ public:
     EblSamplerSound(std::shared_ptr<EblSample> dataIn,
                     int keyLowIn = 0, int keyHighIn = 127,
                     int velocityLowIn = 0, int velocityHighIn = 127,
-                    int rootNoteIn = 60)
+                    int rootNoteIn = 60,
+                    ExbVoiceParameters parametersIn = {})
         : data(std::move(dataIn)),
           keyLow(keyLowIn), keyHigh(keyHighIn),
           velocityLow(velocityLowIn), velocityHigh(velocityHighIn),
-          rootNote(rootNoteIn) {}
+          rootNote(rootNoteIn), parameters(std::move(parametersIn)) {}
 
     bool appliesToNote(int midiNoteNumber) override
     {
@@ -30,6 +31,7 @@ public:
     int velocityLow = 0;
     int velocityHigh = 127;
     int rootNote = 60;
+    ExbVoiceParameters parameters;
 };
 
 class EblSamplerVoice : public juce::SynthesiserVoice
@@ -45,6 +47,8 @@ public:
 
 private:
     void updatePlaybackRatio();
+    float nextAmplitudeEnvelopeSample();
+    void beginAmplitudeRelease();
 
     std::shared_ptr<EblSample> sample;
     double position = 0.0;
@@ -58,4 +62,12 @@ private:
     int releaseSamplesTotal = 1;
     int attackSamplesElapsed = 0;
     int attackSamplesTotal = 1;
+    ExbEnvelope amplitudeEnvelope;
+    int envelopeStage = 0;
+    int envelopeStageSamples = 1;
+    int envelopeStageElapsed = 0;
+    float envelopeStageStart = 0.0f;
+    float envelopeLevel = 0.0f;
+    bool useProgramEnvelope = false;
+    float programGain = 1.0f;
 };
