@@ -26,21 +26,24 @@ MoPhattVSTAudioProcessorEditor::MoPhattVSTAudioProcessorEditor(MoPhattVSTAudioPr
     bankList.setColour(juce::TextEditor::outlineColourId, juce::Colour(0xff30343c));
     addAndMakeVisible(bankList);
 
-    auto refresh = [this]
+    refreshBankList();
+}
+
+void MoPhattVSTAudioProcessorEditor::refreshBankList()
+{
+    juce::String text;
+    for (const auto& bank : processor.getBanks())
     {
-        juce::String text;
-        for (const auto& bank : processor.getBanks())
-        {
-            text += bank.bankName + "  [" + juce::String(static_cast<int>(bank.presets.size())) + " presets]\n";
-            for (const auto& preset : bank.presets)
-                text += "    " + preset.name + "\n";
-            text += "\n";
-        }
-        if (text.isEmpty())
-            text = "No banks loaded.\n\nClick ADD BANK and choose an .exb file.\nKeep its SamplePool folder beside the bank; audio playback is the next development milestone.";
-        bankList.setText(text, juce::dontSendNotification);
-    };
-    refresh();
+        text += bank.bankName + "  [" + juce::String(static_cast<int>(bank.presets.size())) + " presets]\n";
+        for (const auto& preset : bank.presets)
+            text += "    " + preset.name + "\n";
+        text += "\n";
+    }
+
+    if (text.isEmpty())
+        text = "No banks loaded.\n\nClick ADD BANK and choose an .exb file.\nKeep its SamplePool folder beside the bank. Audio playback is the next development milestone.";
+
+    bankList.setText(text, juce::dontSendNotification);
 }
 
 void MoPhattVSTAudioProcessorEditor::chooseBank()
@@ -59,8 +62,10 @@ void MoPhattVSTAudioProcessorEditor::chooseBank()
                 return;
 
             juce::String message;
-            processor.addBank(file, message);
-            bankList.setText(message, juce::dontSendNotification);
+            if (processor.addBank(file, message))
+                refreshBankList();
+            else
+                bankList.setText(message, juce::dontSendNotification);
         });
 }
 
