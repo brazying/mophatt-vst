@@ -31,6 +31,8 @@ target_sources(MoPhattVST PRIVATE
     Source/PluginProcessor.cpp
     Source/PluginEditor.cpp
     Source/ExbBank.cpp
+    Source/EblSample.cpp
+    Source/EblSampler.cpp
 )
 
 target_compile_features(MoPhattVST PRIVATE cxx_std_17)
