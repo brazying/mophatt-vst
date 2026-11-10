@@ -4,6 +4,13 @@
 
 namespace
 {
+    struct Chunk
+    {
+        juce::String tag;
+        size_t dataStart = 0;
+        size_t dataEnd = 0;
+    };
+
     bool hasTag(const juce::uint8* bytes, size_t size, size_t offset, const char* tag)
     {
         return offset + 4 <= size && std::memcmp(bytes + offset, tag, 4) == 0;
@@ -21,6 +28,156 @@ namespace
     {
         return static_cast<juce::uint16>((static_cast<juce::uint16>(p[0]) << 8)
                                        | static_cast<juce::uint16>(p[1]));
+    }
+
+    std::vector<Chunk> readChunks(const juce::uint8* data, size_t start, size_t end)
+    {
+        std::vector<Chunk> chunks;
+        size_t cursor = start;
+
+        while (cursor + 8 <= end)
+        {
+            const size_t declaredSize = static_cast<size_t>(readBE32(data + cursor + 4));
+            const size_t payloadStart = cursor + 8;
+            if (declaredSize > end - payloadStart)
+                break;
+
+            chunks.push_back({ juce::String::fromUTF8(reinterpret_cast<const char*>(data + cursor), 4),
+                               payloadStart, payloadStart + declaredSize });
+            cursor = payloadStart + declaredSize;
+        }
+        return chunks;
+    }
+
+    bool findList(const juce::uint8* data, size_t start, size_t end,
+                  const char* listType, size_t& listStart, size_t& listEnd)
+    {
+        for (const auto& chunk : readChunks(data, start, end))
+        {
+            if (chunk.tag == "LIST" && chunk.dataStart + 4 <= chunk.dataEnd
+                && std::memcmp(data + chunk.dataStart, listType, 4) == 0)
+            {
+                listStart = chunk.dataStart + 4;
+                listEnd = chunk.dataEnd;
+                return true;
+            }
+        }
+        return false;
+    }
+
+    void readWindows(const juce::uint8* data, size_t start, size_t end,
+                     int& keyLow, int& keyHigh, int& velocityLow, int& velocityHigh,
+                     bool zoneWindows)
+    {
+        int windowIndex = 0;
+        for (const auto& chunk : readChunks(data, start, end))
+        {
+            if (chunk.tag != "ETW " || chunk.dataEnd - chunk.dataStart < 8)
+                continue;
+
+            const int low = data[chunk.dataStart + 4];
+            const int high = data[chunk.dataStart + 7];
+
+            if (windowIndex == 0)
+            {
+                keyLow = low;
+                keyHigh = high;
+            }
+            else if (windowIndex == 1)
+            {
+                velocityLow = low;
+                velocityHigh = high;
+            }
+
+            ++windowIndex;
+            if (windowIndex >= (zoneWindows ? 2 : 3))
+                break;
+        }
+    }
+
+    int mapRangeValue(int parentLow, int parentHigh, int childValue)
+    {
+        return parentLow + static_cast<int>(std::lround(
+            static_cast<double>(juce::jlimit(0, 127, childValue)) * (parentHigh - parentLow) / 127.0));
+    }
+
+    void parseZoneList(const juce::uint8* data, size_t start, size_t end,
+                       int voiceKeyLow, int voiceKeyHigh,
+                       int voiceVelocityLow, int voiceVelocityHigh,
+                       std::vector<ExbZone>& zones)
+    {
+        for (const auto& chunk : readChunks(data, start, end))
+        {
+            if (chunk.tag == "Zhdr" && chunk.dataEnd - chunk.dataStart >= 12)
+            {
+                ExbZone zone;
+                zone.sampleIndex = static_cast<int>(readBE16(data + chunk.dataStart + 4));
+                zone.rootNote = juce::jlimit(0, 127, static_cast<int>(data[chunk.dataStart + 10]));
+
+                size_t zoneWindowsStart = 0;
+                size_t zoneWindowsEnd = 0;
+                if (findList(data, chunk.dataEnd, end, "TWL ", zoneWindowsStart, zoneWindowsEnd))
+                {
+                    int zoneKeyLow = 0, zoneKeyHigh = 127;
+                    int zoneVelocityLow = 0, zoneVelocityHigh = 127;
+                    readWindows(data, zoneWindowsStart, zoneWindowsEnd,
+                                zoneKeyLow, zoneKeyHigh, zoneVelocityLow, zoneVelocityHigh, true);
+
+                    zone.keyLow = mapRangeValue(voiceKeyLow, voiceKeyHigh, zoneKeyLow);
+                    zone.keyHigh = mapRangeValue(voiceKeyLow, voiceKeyHigh, zoneKeyHigh);
+                    zone.velocityLow = mapRangeValue(voiceVelocityLow, voiceVelocityHigh, zoneVelocityLow);
+                    zone.velocityHigh = mapRangeValue(voiceVelocityLow, voiceVelocityHigh, zoneVelocityHigh);
+                }
+                else
+                {
+                    zone.keyLow = voiceKeyLow;
+                    zone.keyHigh = voiceKeyHigh;
+                    zone.velocityLow = voiceVelocityLow;
+                    zone.velocityHigh = voiceVelocityHigh;
+                }
+
+                if (zone.sampleIndex > 0 && zone.keyLow <= zone.keyHigh
+                    && zone.velocityLow <= zone.velocityHigh)
+                    zones.push_back(zone);
+            }
+            else if (chunk.tag == "LIST" && chunk.dataStart + 4 <= chunk.dataEnd
+                     && std::memcmp(data + chunk.dataStart, "TWL ", 4) == 0)
+            {
+                // Zone window lists are siblings of Zhdr in E5ZL. The actual mapping
+                // is applied when the Zhdr is read; factory banks generally use full windows.
+            }
+        }
+    }
+
+    void parseVoice(const juce::uint8* data, size_t start, size_t end,
+                    std::vector<ExbZone>& zones)
+    {
+        int keyLow = 0, keyHigh = 127;
+        int velocityLow = 0, velocityHigh = 127;
+
+        size_t voiceWindowsStart = 0;
+        size_t voiceWindowsEnd = 0;
+        if (findList(data, start, end, "TWL ", voiceWindowsStart, voiceWindowsEnd))
+            readWindows(data, voiceWindowsStart, voiceWindowsEnd,
+                        keyLow, keyHigh, velocityLow, velocityHigh, false);
+
+        size_t zoneListStart = 0;
+        size_t zoneListEnd = 0;
+        if (findList(data, start, end, "E5ZL", zoneListStart, zoneListEnd))
+            parseZoneList(data, zoneListStart, zoneListEnd,
+                          keyLow, keyHigh, velocityLow, velocityHigh, zones);
+    }
+
+    void parsePreset(const juce::uint8* data, size_t start, size_t end, ExbPreset& preset)
+    {
+        size_t voiceListStart = 0;
+        size_t voiceListEnd = 0;
+        if (!findList(data, start, end, "E5VL", voiceListStart, voiceListEnd))
+            return;
+
+        for (const auto& voice : readChunks(data, voiceListStart, voiceListEnd))
+            if (voice.tag == "E5V1")
+                parseVoice(data, voice.dataStart, voice.dataEnd, preset.zones);
     }
 }
 
@@ -50,32 +207,31 @@ ExbBankInfo ExbBank::inspect(const juce::File& file)
         return info;
     }
 
-    juce::MemoryBlock data;
-    if (!file.loadFileAsData(data))
+    juce::MemoryBlock memory;
+    if (!file.loadFileAsData(memory))
     {
         info.error = "Could not read the bank file.";
         return info;
     }
 
-    const auto* bytes = static_cast<const juce::uint8*>(data.getData());
-    const size_t size = data.getSize();
-    if (size < 20 || !hasTag(bytes, size, 0, "FORM") || !hasTag(bytes, size, 8, "E5B0"))
+    const auto* data = static_cast<const juce::uint8*>(memory.getData());
+    const size_t size = memory.getSize();
+    if (size < 20 || !hasTag(data, size, 0, "FORM") || !hasTag(data, size, 8, "E5B0"))
     {
         info.error = "Not an E-MU Emulator X EXB bank.";
         return info;
     }
 
-    // TOC2 is usually the first top-level chunk, but some banks place INFO before it.
     size_t cursor = 12;
     size_t tocStart = 0;
     size_t tocSize = 0;
     while (cursor + 8 <= size)
     {
-        const size_t chunkSize = static_cast<size_t>(readBE32(bytes + cursor + 4));
+        const size_t chunkSize = static_cast<size_t>(readBE32(data + cursor + 4));
         if (chunkSize > size || cursor + 8 + chunkSize > size)
             break;
 
-        if (hasTag(bytes, size, cursor, "TOC2"))
+        if (hasTag(data, size, cursor, "TOC2"))
         {
             tocStart = cursor + 8;
             tocSize = chunkSize;
@@ -92,14 +248,24 @@ ExbBankInfo ExbBank::inspect(const juce::File& file)
 
     for (size_t offset = 0; offset + 78 <= tocSize; offset += 78)
     {
-        const auto* entry = bytes + tocStart + offset;
+        const auto* entry = data + tocStart + offset;
         const int index = static_cast<int>(readBE16(entry + 12));
         const auto name = readUtf16Le(entry + 14, 64);
 
         if (std::memcmp(entry, "E5P1", 4) == 0)
         {
-            if (name.isNotEmpty())
-                info.presets.push_back({ name, index });
+            ExbPreset preset;
+            preset.name = name;
+            preset.number = index;
+
+            const size_t chunkOffset = static_cast<size_t>(readBE32(entry + 8));
+            const size_t chunkSize = static_cast<size_t>(readBE32(entry + 4));
+            if (chunkOffset + 10 <= size && chunkSize >= 2
+                && chunkOffset + 8 + chunkSize <= size)
+                parsePreset(data, chunkOffset + 10, chunkOffset + 8 + chunkSize, preset);
+
+            if (preset.name.isNotEmpty())
+                info.presets.push_back(std::move(preset));
         }
         else if (std::memcmp(entry, "E5SL", 4) == 0 || std::memcmp(entry, "EXSL", 4) == 0)
         {
