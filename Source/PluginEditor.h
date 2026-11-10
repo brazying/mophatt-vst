@@ -14,6 +14,7 @@ public:
 
 private:
     void chooseBank();
+    void refreshBankList();
 
     MoPhattVSTAudioProcessor& processor;
     juce::TextButton addBankButton { "ADD BANK" };
