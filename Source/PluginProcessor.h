@@ -36,6 +36,7 @@ public:
 
     bool addBank(const juce::File& file, juce::String& message);
     bool loadEblPreview(const juce::File& file, juce::String& message);
+    bool loadPreset(int bankIndex, int presetIndex, juce::String& message);
     const std::vector<ExbBankInfo>& getBanks() const { return banks; }
     juce::String getPreviewName() const { return previewName; }
     juce::String getPreviewInfo() const { return previewInfo; }
