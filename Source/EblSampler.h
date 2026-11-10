@@ -3,6 +3,7 @@
 #include <JuceHeader.h>
 #include "EblSample.h"
 #include <memory>
+#include <utility>
 
 class EblSamplerSound : public juce::SynthesiserSound
 {
