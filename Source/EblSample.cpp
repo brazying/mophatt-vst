@@ -149,7 +149,12 @@ bool EblSample::load(const juce::File& file, EblSample& result, juce::String& er
         return false;
     }
 
-    const int bytesPerSample = data[payload + 115] == 4 ? 4 : 2;
+    const int bytesPerSample = data[payload + 115];
+    if (bytesPerSample != 2 && bytesPerSample != 4)
+    {
+        error = "EBL sample uses an unsupported sample width.";
+        return false;
+    }
     const auto leftStart = static_cast<size_t>(readLE32(data + payload + 72));
     const auto leftEnd = static_cast<size_t>(readLE32(data + payload + 80));
     const auto rightStart = static_cast<size_t>(readLE32(data + payload + 76));
