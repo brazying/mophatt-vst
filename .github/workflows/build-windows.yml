@@ -12,6 +12,7 @@ concurrency:
 jobs:
   build-windows:
     runs-on: windows-latest
+    timeout-minutes: 30
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -20,7 +21,7 @@ jobs:
         run: cmake -S . -B build -A x64
 
       - name: Build
-        run: cmake --build build --config Release --parallel
+        run: cmake --build build --config Release --parallel 2 --verbose
 
       - name: Upload VST3
         uses: actions/upload-artifact@v4
