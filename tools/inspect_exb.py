@@ -38,6 +38,8 @@ def main(path):
     chunk_counts = collections.Counter()
     sample_ids = collections.Counter()
     sample_links = []
+    voice_raw = collections.defaultdict(list)
+    filter_types = collections.Counter()
     preset_examples = []
     raw_examples = collections.defaultdict(list)
 
@@ -71,8 +73,12 @@ def main(path):
             voice_counts["E5V1"] += 1
             for ctag, _, cbody, cstop, csize in chunks(b, vbody, vstop):
                 chunk_counts[ctag] += 1
-                if ctag == "E5Fl" and len(raw_examples["E5Fl"]) < 16:
-                    raw_examples["E5Fl"].append(b[cbody:cstop].hex(" "))
+                if ctag in ("Vhdr", "E5Vs", "E5MP", "E5Oc") and len(voice_raw[ctag]) < 12:
+                    voice_raw[ctag].append(b[cbody:cstop].hex(" "))
+                if ctag == "E5Fl" and csize >= 5:
+                    filter_types[b[cbody+4]] += 1
+                    if len(raw_examples["E5Fl"]) < 16:
+                        raw_examples["E5Fl"].append(b[cbody:cstop].hex(" "))
                 if ctag == "E5Am" and len(raw_examples["E5Am"]) < 12:
                     raw_examples["E5Am"].append(b[cbody:cstop].hex(" "))
                 if ctag != "LIST" or cstop-cbody < 4: continue
@@ -106,6 +112,10 @@ def main(path):
         print("RAW", tag, "examples", len(values))
         for value in values: print(value)
     print("FIRST SAMPLE IDS", sample_ids.most_common(40))
+    print("FILTER TYPE COUNTS", dict(filter_types))
+    for tag, values in voice_raw.items():
+        print("VOICE RAW", tag, "examples", len(values))
+        for value in values: print(value)
     print("FIRST E5SL LINKS (slot, sample_index)", sample_links[:60])
     print("E5SL SLOT RANGE", (min((x[0] for x in sample_links), default=None), max((x[0] for x in sample_links), default=None)))
     print("E5SL SAMPLE INDEX RANGE", (min((x[1] for x in sample_links), default=None), max((x[1] for x in sample_links), default=None)))
