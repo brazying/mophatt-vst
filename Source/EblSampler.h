@@ -71,4 +71,5 @@ private:
     float envelopeLevel = 0.0f;
     bool useProgramEnvelope = false;
     float programGain = 1.0f;
+    int modWheelValue = 0;
 };
