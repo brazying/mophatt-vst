@@ -136,7 +136,7 @@ bool MoPhattVSTAudioProcessor::loadPreset(int bankIndex, int presetIndex, juce::
     for (auto& sound : sounds)
         synth.addSound(sound.release());
 
-    previewFile = {};
+    previewFile = juce::File();
     previewName = preset.name;
     previewInfo = juce::String(static_cast<int>(sounds.size())) + " zones / MIDI ready";
 
