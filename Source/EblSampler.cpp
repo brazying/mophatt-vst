@@ -159,10 +159,26 @@ void EblSamplerVoice::renderNextBlock(juce::AudioBuffer<float>& output, int star
 
         // Four-point Hermite interpolation reduces aliasing and roughness compared with
         // the previous linear interpolator, especially when samples are transposed.
-        const int i0 = juce::jlimit(0, sourceFrames - 1, index - 1);
-        const int i1 = juce::jlimit(0, sourceFrames - 1, index);
-        const int i2 = juce::jlimit(0, sourceFrames - 1, index + 1);
-        const int i3 = juce::jlimit(0, sourceFrames - 1, index + 2);
+        const bool interpolateInsideLoop = sample->hasLoop && !releasing
+            && position >= static_cast<double>(sample->loopStart)
+            && position < static_cast<double>(sample->loopEnd);
+        const int loopLength = juce::jmax(1, sample->loopEnd - sample->loopStart);
+        const auto sourceIndex = [sourceFrames, interpolateInsideLoop, loopLength,
+                                  loopStart = sample->loopStart](int requested)
+        {
+            if (interpolateInsideLoop)
+            {
+                int wrapped = (requested - loopStart) % loopLength;
+                if (wrapped < 0)
+                    wrapped += loopLength;
+                return loopStart + wrapped;
+            }
+            return juce::jlimit(0, sourceFrames - 1, requested);
+        };
+        const int i0 = sourceIndex(index - 1);
+        const int i1 = sourceIndex(index);
+        const int i2 = sourceIndex(index + 1);
+        const int i3 = sourceIndex(index + 2);
 
         float envelope = 1.0f;
         if (useProgramEnvelope)
