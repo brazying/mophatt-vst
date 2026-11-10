@@ -26,6 +26,12 @@ namespace
              | static_cast<juce::uint32>(p[3]);
     }
 
+    juce::uint16 readBE16(const juce::uint8* p)
+    {
+        return static_cast<juce::uint16>((static_cast<juce::uint16>(p[0]) << 8)
+                                       | static_cast<juce::uint16>(p[1]));
+    }
+
     float readBEFloat(const juce::uint8* p)
     {
         const juce::uint32 raw = readBE32(p);
@@ -254,6 +260,18 @@ namespace
         if (findList(data, start, end, "E5ZL", zoneListStart, zoneListEnd))
             parseZoneList(data, zoneListStart, zoneListEnd,
                           keyLow, keyHigh, velocityLow, velocityHigh, parameters, zones);
+    }
+
+    void parsePreset(const juce::uint8* data, size_t start, size_t end, ExbPreset& preset)
+    {
+        size_t voiceListStart = 0;
+        size_t voiceListEnd = 0;
+        if (!findList(data, start, end, "E5VL", voiceListStart, voiceListEnd))
+            return;
+
+        for (const auto& voice : readChunks(data, voiceListStart, voiceListEnd))
+            if (voice.tag == "E5V1")
+                parseVoice(data, voice.dataStart, voice.dataEnd, preset.zones);
     }
 }
 
