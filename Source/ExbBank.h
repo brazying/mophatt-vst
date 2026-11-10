@@ -3,10 +3,21 @@
 #include <juce_core/juce_core.h>
 #include <vector>
 
+struct ExbZone
+{
+    int sampleIndex = 0;
+    int rootNote = 60;
+    int keyLow = 0;
+    int keyHigh = 127;
+    int velocityLow = 0;
+    int velocityHigh = 127;
+};
+
 struct ExbPreset
 {
     juce::String name;
     int number = -1;
+    std::vector<ExbZone> zones;
 };
 
 struct ExbBankInfo
