@@ -32,6 +32,14 @@ namespace
                                        | static_cast<juce::uint16>(p[1]));
     }
 
+    float readBEFloat(const juce::uint8* p)
+    {
+        const juce::uint32 raw = readBE32(p);
+        float value = 0.0f;
+        std::memcpy(&value, &raw, sizeof(value));
+        return std::isfinite(value) ? value : 0.0f;
+    }
+
     std::vector<Chunk> readChunks(const juce::uint8* data, size_t start, size_t end)
     {
         std::vector<Chunk> chunks;
@@ -107,9 +115,96 @@ namespace
             static_cast<double>(juce::jlimit(0, 127, childValue)) * (parentHigh - parentLow) / 127.0));
     }
 
+    void copyChunkPayload(const juce::uint8* data, const Chunk& chunk,
+                          std::vector<juce::uint8>& destination)
+    {
+        destination.assign(data + chunk.dataStart, data + chunk.dataEnd);
+    }
+
+    void parseVoiceParameters(const juce::uint8* data, size_t start, size_t end,
+                              ExbVoiceParameters& parameters)
+    {
+        int envelopeIndex = 0;
+
+        for (const auto& chunk : readChunks(data, start, end))
+        {
+            const size_t chunkSize = chunk.dataEnd - chunk.dataStart;
+
+            if (chunk.tag == "E5Fl" && chunkSize >= 13)
+            {
+                parameters.filter.type = static_cast<int>(data[chunk.dataStart + 4]);
+                parameters.filter.frequency = readBEFloat(data + chunk.dataStart + 5);
+                parameters.filter.resonance = readBEFloat(data + chunk.dataStart + 9);
+                parameters.filter.valid = true;
+            }
+            else if (chunk.tag == "E5Am" && chunkSize >= 8)
+            {
+                parameters.amplitude = readBEFloat(data + chunk.dataStart + 4);
+                parameters.hasAmplitude = true;
+            }
+            else if (chunk.tag == "LIST" && chunkSize >= 4)
+            {
+                const auto* listType = data + chunk.dataStart;
+                const size_t listStart = chunk.dataStart + 4;
+
+                if (std::memcmp(listType, "EvL ", 4) == 0)
+                {
+                    for (const auto& envelopeChunk : readChunks(data, listStart, chunk.dataEnd))
+                    {
+                        if (envelopeChunk.tag != "E5Ev"
+                            || envelopeIndex >= static_cast<int>(parameters.envelopes.size())
+                            || envelopeChunk.dataEnd - envelopeChunk.dataStart < 64)
+                            continue;
+
+                        auto& envelope = parameters.envelopes[static_cast<size_t>(envelopeIndex++)];
+                        for (int stage = 0; stage < 6; ++stage)
+                        {
+                            const size_t offset = envelopeChunk.dataStart + 10
+                                                + static_cast<size_t>(stage) * 9;
+                            envelope.stages[static_cast<size_t>(stage)].rate = readBEFloat(data + offset);
+                            envelope.stages[static_cast<size_t>(stage)].level = readBEFloat(data + offset + 4);
+                        }
+                        envelope.valid = true;
+                    }
+                }
+                else if (std::memcmp(listType, "LFOL", 4) == 0)
+                {
+                    for (const auto& lfoChunk : readChunks(data, listStart, chunk.dataEnd))
+                        if (lfoChunk.tag == "E5LF")
+                            parameters.lfoData.emplace_back(data + lfoChunk.dataStart,
+                                                            data + lfoChunk.dataEnd);
+                }
+                else if (std::memcmp(listType, "FuGL", 4) == 0)
+                {
+                    for (const auto& functionChunk : readChunks(data, listStart, chunk.dataEnd))
+                        if (functionChunk.tag == "EFGn")
+                            parameters.functionGeneratorData.emplace_back(data + functionChunk.dataStart,
+                                                                          data + functionChunk.dataEnd);
+                }
+                else if (std::memcmp(listType, "CrdL", 4) == 0)
+                {
+                    for (const auto& cordChunk : readChunks(data, listStart, chunk.dataEnd))
+                    {
+                        if (cordChunk.tag != "E5Cd"
+                            || cordChunk.dataEnd - cordChunk.dataStart < 10)
+                            continue;
+
+                        ExbModulationCord cord;
+                        cord.source = static_cast<int>(data[cordChunk.dataStart + 4]);
+                        cord.destination = static_cast<int>(data[cordChunk.dataStart + 5]);
+                        cord.amount = readBEFloat(data + cordChunk.dataStart + 6);
+                        if (cord.source != 0 || cord.destination != 0 || cord.amount != 0.0f)
+                            parameters.modulationCords.push_back(cord);
+                    }
+                }
+            }
+        }
+    }
+
     void parseZoneList(const juce::uint8* data, size_t start, size_t end,
                        int voiceKeyLow, int voiceKeyHigh,
                        int voiceVelocityLow, int voiceVelocityHigh,
+                       const std::shared_ptr<const ExbVoiceParameters>& voiceParameters,
                        std::vector<ExbZone>& zones)
     {
         for (const auto& chunk : readChunks(data, start, end))
@@ -119,6 +214,7 @@ namespace
                 ExbZone zone;
                 zone.sampleIndex = static_cast<int>(readBE16(data + chunk.dataStart + 4));
                 zone.rootNote = juce::jlimit(0, 127, static_cast<int>(data[chunk.dataStart + 10]));
+                zone.voiceParameters = voiceParameters;
 
                 size_t zoneWindowsStart = 0;
                 size_t zoneWindowsEnd = 0;
@@ -144,13 +240,7 @@ namespace
 
                 if (zone.sampleIndex > 0 && zone.keyLow <= zone.keyHigh
                     && zone.velocityLow <= zone.velocityHigh)
-                    zones.push_back(zone);
-            }
-            else if (chunk.tag == "LIST" && chunk.dataStart + 4 <= chunk.dataEnd
-                     && std::memcmp(data + chunk.dataStart, "TWL ", 4) == 0)
-            {
-                // Zone window lists are siblings of Zhdr in E5ZL. The actual mapping
-                // is applied when the Zhdr is read; factory banks generally use full windows.
+                    zones.push_back(std::move(zone));
             }
         }
     }
@@ -167,11 +257,15 @@ namespace
             readWindows(data, voiceWindowsStart, voiceWindowsEnd,
                         keyLow, keyHigh, velocityLow, velocityHigh, false);
 
+        auto parameters = std::make_shared<ExbVoiceParameters>();
+        parseVoiceParameters(data, start, end, *parameters);
+
         size_t zoneListStart = 0;
         size_t zoneListEnd = 0;
         if (findList(data, start, end, "E5ZL", zoneListStart, zoneListEnd))
             parseZoneList(data, zoneListStart, zoneListEnd,
-                          keyLow, keyHigh, velocityLow, velocityHigh, zones);
+                          keyLow, keyHigh, velocityLow, velocityHigh,
+                          parameters, zones);
     }
 
     void parsePreset(const juce::uint8* data, size_t start, size_t end, ExbPreset& preset)
