@@ -28,20 +28,6 @@ namespace
 
     float readBEFloat(const juce::uint8* p)
     {
-        const juce::uint32 bits = readBE32(p);
-        float value = 0.0f;
-        std::memcpy(&value, &bits, sizeof(value));
-        return value;
-    }
-
-    juce::uint16 readBE16(const juce::uint8* p)
-    {
-        return static_cast<juce::uint16>((static_cast<juce::uint16>(p[0]) << 8)
-                                       | static_cast<juce::uint16>(p[1]));
-    }
-
-    float readBEFloat(const juce::uint8* p)
-    {
         const juce::uint32 raw = readBE32(p);
         float value = 0.0f;
         std::memcpy(&value, &raw, sizeof(value));
@@ -209,64 +195,10 @@ namespace
         }
     }
 
-    ExbVoiceParameters parseVoiceParameters(const juce::uint8* data, size_t start, size_t end)
-    {
-        ExbVoiceParameters parameters;
-        for (const auto& chunk : readChunks(data, start, end))
-        {
-            const auto length = chunk.dataEnd - chunk.dataStart;
-            if (chunk.tag == "E5Am" && length >= 8)
-            {
-                parameters.ampGainDb = juce::jlimit(-96.0f, 10.0f, readBEFloat(data + chunk.dataStart + 4));
-            }
-            else if (chunk.tag == "E5Fl" && length >= 13)
-            {
-                parameters.filterType = static_cast<int>(data[chunk.dataStart + 4]);
-                parameters.filterFrequency = juce::jlimit(0.0f, 1.0f, readBEFloat(data + chunk.dataStart + 5));
-                parameters.filterResonance = juce::jlimit(0.0f, 1.0f, readBEFloat(data + chunk.dataStart + 9));
-            }
-            else if (chunk.tag == "LIST" && chunk.dataStart + 4 <= chunk.dataEnd
-                     && std::memcmp(data + chunk.dataStart, "EvL ", 4) == 0)
-            {
-                int envelopeIndex = 0;
-                for (const auto& envelope : readChunks(data, chunk.dataStart + 4, chunk.dataEnd))
-                {
-                    if (envelope.tag != "E5Ev" || envelope.dataEnd - envelope.dataStart < 64
-                        || envelopeIndex >= static_cast<int>(parameters.envelopes.size()))
-                        continue;
-                    auto& target = parameters.envelopes[static_cast<size_t>(envelopeIndex++)];
-                    for (int stage = 0; stage < 6; ++stage)
-                    {
-                        const size_t offset = envelope.dataStart + 10 + static_cast<size_t>(stage) * 9;
-                        target.rates[static_cast<size_t>(stage)] = juce::jlimit(0.0f, 1.0f, readBEFloat(data + offset));
-                        target.levels[static_cast<size_t>(stage)] = juce::jlimit(0.0f, 100.0f, readBEFloat(data + offset + 4));
-                    }
-                    target.valid = true;
-                }
-            }
-            else if (chunk.tag == "LIST" && chunk.dataStart + 4 <= chunk.dataEnd
-                     && std::memcmp(data + chunk.dataStart, "CrdL", 4) == 0)
-            {
-                for (const auto& cord : readChunks(data, chunk.dataStart + 4, chunk.dataEnd))
-                {
-                    if (cord.tag != "E5Cd" || cord.dataEnd - cord.dataStart < 10)
-                        continue;
-                    ExbModCord item;
-                    item.source = data[cord.dataStart + 4];
-                    item.destination = data[cord.dataStart + 5];
-                    item.amount = readBEFloat(data + cord.dataStart + 6);
-                    if (item.source != 0 || item.destination != 0 || item.amount != 0.0f)
-                        parameters.modulationCords.push_back(item);
-                }
-            }
-        }
-        return parameters;
-    }
-
     void parseZoneList(const juce::uint8* data, size_t start, size_t end,
                        int voiceKeyLow, int voiceKeyHigh,
                        int voiceVelocityLow, int voiceVelocityHigh,
-                       const ExbVoiceParameters& parameters,
+                       std::shared_ptr<const ExbVoiceParameters> parameters,
                        std::vector<ExbZone>& zones)
     {
         for (const auto& chunk : readChunks(data, start, end))
@@ -276,7 +208,7 @@ namespace
                 ExbZone zone;
                 zone.sampleIndex = static_cast<int>(readBE16(data + chunk.dataStart + 4));
                 zone.rootNote = juce::jlimit(0, 127, static_cast<int>(data[chunk.dataStart + 10]));
-                zone.parameters = parameters;
+                zone.voiceParameters = parameters;
                 size_t zoneWindowsStart = 0;
                 size_t zoneWindowsEnd = 0;
                 if (findList(data, chunk.dataEnd, end, "TWL ", zoneWindowsStart, zoneWindowsEnd))
@@ -315,7 +247,8 @@ namespace
             readWindows(data, voiceWindowsStart, voiceWindowsEnd,
                         keyLow, keyHigh, velocityLow, velocityHigh, false);
 
-        const auto parameters = parseVoiceParameters(data, start, end);
+        auto parameters = std::make_shared<ExbVoiceParameters>();
+        parseVoiceParameters(data, start, end, *parameters);
         size_t zoneListStart = 0;
         size_t zoneListEnd = 0;
         if (findList(data, start, end, "E5ZL", zoneListStart, zoneListEnd))
