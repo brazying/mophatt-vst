@@ -3,7 +3,7 @@
 MoPhattVSTAudioProcessorEditor::MoPhattVSTAudioProcessorEditor(MoPhattVSTAudioProcessor& p)
     : AudioProcessorEditor(&p), processor(p)
 {
-    setSize(700, 500);
+    setSize(760, 540);
 
     title.setFont(juce::Font(27.0f, juce::Font::bold));
     title.setColour(juce::Label::textColourId, juce::Colours::white);
@@ -23,6 +23,17 @@ MoPhattVSTAudioProcessorEditor::MoPhattVSTAudioProcessorEditor(MoPhattVSTAudioPr
     loadEblButton.setColour(juce::TextButton::textColourOffId, juce::Colours::white);
     addAndMakeVisible(loadEblButton);
 
+    loadPresetButton.onClick = [this] { loadSelectedPreset(); };
+    loadPresetButton.setColour(juce::TextButton::buttonColourId, juce::Colour(0xffd6ff3f));
+    loadPresetButton.setColour(juce::TextButton::textColourOffId, juce::Colour(0xff111111));
+    addAndMakeVisible(loadPresetButton);
+
+    presetSelector.setTextWhenNothingSelected("Choose a preset");
+    presetSelector.setColour(juce::ComboBox::backgroundColourId, juce::Colour(0xff17191e));
+    presetSelector.setColour(juce::ComboBox::textColourId, juce::Colours::white);
+    presetSelector.setColour(juce::ComboBox::outlineColourId, juce::Colour(0xff30343c));
+    addAndMakeVisible(presetSelector);
+
     previewLabel.setFont(juce::Font(12.0f));
     previewLabel.setColour(juce::Label::textColourId, juce::Colour(0xffd6ff3f));
     addAndMakeVisible(previewLabel);
@@ -41,22 +52,34 @@ MoPhattVSTAudioProcessorEditor::MoPhattVSTAudioProcessorEditor(MoPhattVSTAudioPr
 void MoPhattVSTAudioProcessorEditor::refreshBankList()
 {
     juce::String text;
+    presetSelector.clear();
+    presetItems.clear();
+
+    int itemId = 1;
+    int bankIndex = 0;
     for (const auto& bank : processor.getBanks())
     {
         text += bank.bankName + "  [" + juce::String(static_cast<int>(bank.presets.size()))
-             + " presets / " + juce::String(bank.sampleCount) + " samples]\n";
-        for (const auto& preset : bank.presets)
-            text += "    " + preset.name + "\n";
-        text += "\n";
+             + " presets / " + juce::String(bank.sampleCount) + " sample links]\n";
+
+        for (int presetIndex = 0; presetIndex < static_cast<int>(bank.presets.size()); ++presetIndex)
+        {
+            presetSelector.addItem(bank.bankName + " / " + bank.presets[static_cast<size_t>(presetIndex)].name,
+                                   itemId++);
+            presetItems.emplace_back(bankIndex, presetIndex);
+        }
+        ++bankIndex;
     }
 
     if (text.isEmpty())
         text = "No EXB banks loaded.\n\nClick ADD BANK to import an Emulator X bank.";
-
     bankList.setText(text, juce::dontSendNotification);
 
+    if (!presetItems.empty())
+        presetSelector.setSelectedId(1, juce::dontSendNotification);
+
     const auto preview = processor.getPreviewName();
-    previewLabel.setText(preview.isEmpty() ? "NO SAMPLE LOADED"
+    previewLabel.setText(preview.isEmpty() ? "NO PRESET OR SAMPLE LOADED"
                                            : preview + "  /  " + processor.getPreviewInfo(),
                         juce::dontSendNotification);
 }
@@ -103,6 +126,21 @@ void MoPhattVSTAudioProcessorEditor::chooseEbl()
         });
 }
 
+void MoPhattVSTAudioProcessorEditor::loadSelectedPreset()
+{
+    const int selectedId = presetSelector.getSelectedId();
+    const int index = selectedId - 1;
+    if (!juce::isPositiveAndBelow(index, static_cast<int>(presetItems.size())))
+        return;
+
+    const auto selection = presetItems[static_cast<size_t>(index)];
+    juce::String message;
+    if (processor.loadPreset(selection.first, selection.second, message))
+        refreshBankList();
+    else
+        previewLabel.setText(message, juce::dontSendNotification);
+}
+
 void MoPhattVSTAudioProcessorEditor::paint(juce::Graphics& g)
 {
     g.fillAll(juce::Colour(0xff101216));
@@ -116,8 +154,10 @@ void MoPhattVSTAudioProcessorEditor::resized()
 {
     title.setBounds(24, 20, 300, 38);
     subtitle.setBounds(26, 59, 350, 22);
-    addBankButton.setBounds(getWidth() - 300, 34, 130, 38);
-    loadEblButton.setBounds(getWidth() - 158, 34, 134, 38);
-    previewLabel.setBounds(26, 102, getWidth() - 52, 24);
-    bankList.setBounds(24, 138, getWidth() - 48, getHeight() - 162);
+    addBankButton.setBounds(getWidth() - 430, 34, 125, 38);
+    loadEblButton.setBounds(getWidth() - 294, 34, 140, 38);
+    loadPresetButton.setBounds(getWidth() - 143, 34, 119, 38);
+    presetSelector.setBounds(24, 108, getWidth() - 48, 34);
+    previewLabel.setBounds(26, 150, getWidth() - 52, 24);
+    bankList.setBounds(24, 184, getWidth() - 48, getHeight() - 208);
 }
