@@ -17,6 +17,17 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Inspect EXB voice data
+        shell: pwsh
+        run: python tools/inspect_exb.py "Xtreme Lead-1.exb" | Tee-Object -FilePath exb-voice-report.txt
+
+      - name: Upload EXB analysis report
+        uses: actions/upload-artifact@v4
+        with:
+          name: EXB-Voice-Analysis
+          path: exb-voice-report.txt
+          if-no-files-found: error
+
       - name: Configure
         run: cmake -S . -B build -A x64
 
