@@ -225,8 +225,10 @@ bool EblSample::load(const juce::File& file, EblSample& result, juce::String& er
         {
             parsed.loopStart = static_cast<int>((loopStartBytes - leftStart) / bytesPerSample);
             parsed.loopEnd = static_cast<int>((loopEndBytes - leftStart) / bytesPerSample);
-            parsed.hasLoop = parsed.loopStart >= 0 && parsed.loopEnd > parsed.loopStart
-                          && parsed.loopEnd < frames;
+            // A loop ending exactly at the final sample frame is valid.
+            // Rejecting it silently disabled many normal end-of-sample loops.
+            parsed.hasLoop = parsed.loopStart >= 0 && parsed.loopStart < frames
+                          && parsed.loopEnd > parsed.loopStart && parsed.loopEnd <= frames;
         }
         else
         {
