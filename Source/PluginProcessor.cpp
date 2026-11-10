@@ -1,5 +1,6 @@
 #include "PluginProcessor.h"
 #include "PluginEditor.h"
+#include <map>
 
 MoPhattVSTAudioProcessor::MoPhattVSTAudioProcessor()
     : AudioProcessor(BusesProperties().withOutput("Output", juce::AudioChannelSet::stereo(), true))
@@ -55,6 +56,94 @@ bool MoPhattVSTAudioProcessor::addBank(const juce::File& file, juce::String& mes
             + juce::String(static_cast<int>(bank.presets.size())) + " presets, "
             + juce::String(bank.sampleCount) + " sample links.";
     banks.push_back(std::move(bank));
+    return true;
+}
+
+bool MoPhattVSTAudioProcessor::loadPreset(int bankIndex, int presetIndex, juce::String& message)
+{
+    if (!juce::isPositiveAndBelow(bankIndex, static_cast<int>(banks.size())))
+    {
+        message = "Select a valid bank.";
+        return false;
+    }
+
+    const auto& bank = banks[static_cast<size_t>(bankIndex)];
+    if (!juce::isPositiveAndBelow(presetIndex, static_cast<int>(bank.presets.size())))
+    {
+        message = "Select a valid preset.";
+        return false;
+    }
+
+    const auto& preset = bank.presets[static_cast<size_t>(presetIndex)];
+    if (preset.zones.empty())
+    {
+        message = "No sample zones were found in this preset yet.";
+        return false;
+    }
+
+    const auto samplePool = bank.file.getParentDirectory().getChildFile("SamplePool");
+    const auto bankFolder = bank.file.getParentDirectory().getChildFile(bank.bankName);
+    std::map<int, std::shared_ptr<EblSample>> loadedSamples;
+    std::vector<std::unique_ptr<EblSamplerSound>> sounds;
+    juce::String missingSamples;
+
+    for (const auto& zone : preset.zones)
+    {
+        auto sample = loadedSamples.find(zone.sampleIndex);
+        if (sample == loadedSamples.end())
+        {
+            const auto sampleFileName = bank.bankName + "SL"
+                + juce::String(zone.sampleIndex).paddedLeft('0', 3) + ".ebl";
+
+            juce::File sampleFile = samplePool.getChildFile(sampleFileName);
+            if (!sampleFile.existsAsFile())
+                sampleFile = bank.file.getParentDirectory().getChildFile(sampleFileName);
+            if (!sampleFile.existsAsFile())
+                sampleFile = bankFolder.getChildFile("SamplePool").getChildFile(sampleFileName);
+
+            if (!sampleFile.existsAsFile())
+            {
+                missingSamples += juce::String(zone.sampleIndex) + " ";
+                continue;
+            }
+
+            EblSample decoded;
+            juce::String error;
+            if (!EblSample::load(sampleFile, decoded, error))
+            {
+                missingSamples += juce::String(zone.sampleIndex) + " ";
+                continue;
+            }
+
+            decoded.rootNote = zone.rootNote;
+            auto shared = std::make_shared<EblSample>(std::move(decoded));
+            sample = loadedSamples.emplace(zone.sampleIndex, std::move(shared)).first;
+        }
+
+        sounds.push_back(std::make_unique<EblSamplerSound>(
+            sample->second, zone.keyLow, zone.keyHigh,
+            zone.velocityLow, zone.velocityHigh, zone.rootNote));
+    }
+
+    if (sounds.empty())
+    {
+        message = "Could not load any samples for this preset. Missing sample IDs: " + missingSamples;
+        return false;
+    }
+
+    synth.allNotesOff(1, false);
+    synth.clearSounds();
+    for (auto& sound : sounds)
+        synth.addSound(sound.release());
+
+    previewFile = {};
+    previewName = preset.name;
+    previewInfo = juce::String(static_cast<int>(sounds.size())) + " zones / MIDI ready";
+
+    message = "Loaded " + preset.name + " with "
+            + juce::String(static_cast<int>(sounds.size())) + " zones.";
+    if (missingSamples.isNotEmpty())
+        message += " Missing sample IDs: " + missingSamples.trim();
     return true;
 }
 
