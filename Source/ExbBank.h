@@ -4,6 +4,7 @@
 #include <array>
 #include <memory>
 #include <vector>
+#include <array>
 
 struct ExbEnvelopeStage
 {
@@ -41,6 +42,30 @@ struct ExbVoiceParameters
     std::vector<std::vector<juce::uint8>> functionGeneratorData;
     float amplitude = 1.0f;
     bool hasAmplitude = false;
+};
+
+struct ExbEnvelope
+{
+    std::array<float, 6> rates {};
+    std::array<float, 6> levels {};
+    bool valid = false;
+};
+
+struct ExbModCord
+{
+    juce::uint8 source = 0;
+    juce::uint8 destination = 0;
+    float amount = 0.0f;
+};
+
+struct ExbVoiceParameters
+{
+    float ampGainDb = 0.0f;
+    int filterType = 0;
+    float filterFrequency = 1.0f;
+    float filterResonance = 0.0f;
+    std::array<ExbEnvelope, 3> envelopes {};
+    std::vector<ExbModCord> modulationCords;
 };
 
 struct ExbZone
