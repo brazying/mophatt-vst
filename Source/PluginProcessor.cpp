@@ -2,6 +2,46 @@
 #include "PluginEditor.h"
 #include <map>
 
+namespace
+{
+    juce::File findEblSampleFile(const juce::File& bankFile,
+                                 const juce::String& bankName,
+                                 int sampleIndex)
+    {
+        const auto id = juce::String(sampleIndex);
+        const auto paddedId = id.paddedLeft('0', 3);
+        const auto prefixedName = bankName + "SL" + paddedId + ".ebl";
+        const auto shortName = "SL" + paddedId + ".ebl";
+
+        const auto parent = bankFile.getParentDirectory();
+        const auto samplePool = parent.getChildFile("SamplePool");
+        const auto bankFolder = parent.getChildFile(bankName);
+        const juce::File directories[] = {
+            samplePool,
+            parent,
+            bankFolder.getChildFile("SamplePool"),
+            bankFolder
+        };
+        const juce::String names[] = {
+            prefixedName,
+            shortName,
+            bankName + "SL" + id + ".ebl",
+            "SL" + id + ".ebl",
+            id + ".ebl"
+        };
+
+        for (const auto& directory : directories)
+            for (const auto& name : names)
+            {
+                const auto candidate = directory.getChildFile(name);
+                if (candidate.existsAsFile())
+                    return candidate;
+            }
+
+        return {};
+    }
+}
+
 MoPhattVSTAudioProcessor::MoPhattVSTAudioProcessor()
     : AudioProcessor(BusesProperties().withOutput("Output", juce::AudioChannelSet::stereo(), true))
 {
@@ -81,8 +121,6 @@ bool MoPhattVSTAudioProcessor::loadPreset(int bankIndex, int presetIndex, juce::
         return false;
     }
 
-    const auto samplePool = bank.file.getParentDirectory().getChildFile("SamplePool");
-    const auto bankFolder = bank.file.getParentDirectory().getChildFile(bank.bankName);
     std::map<int, std::shared_ptr<EblSample>> loadedSamples;
     std::vector<std::unique_ptr<EblSamplerSound>> sounds;
     juce::String missingSamples;
@@ -92,14 +130,7 @@ bool MoPhattVSTAudioProcessor::loadPreset(int bankIndex, int presetIndex, juce::
         auto sample = loadedSamples.find(zone.sampleIndex);
         if (sample == loadedSamples.end())
         {
-            const auto sampleFileName = bank.bankName + "SL"
-                + juce::String(zone.sampleIndex).paddedLeft('0', 3) + ".ebl";
-
-            juce::File sampleFile = samplePool.getChildFile(sampleFileName);
-            if (!sampleFile.existsAsFile())
-                sampleFile = bank.file.getParentDirectory().getChildFile(sampleFileName);
-            if (!sampleFile.existsAsFile())
-                sampleFile = bankFolder.getChildFile("SamplePool").getChildFile(sampleFileName);
+            const auto sampleFile = findEblSampleFile(bank.file, bank.bankName, zone.sampleIndex);
 
             if (!sampleFile.existsAsFile())
             {
