@@ -10,7 +10,21 @@ void EblSamplerVoice::updatePlaybackRatio()
 {
     // Emulator X presets can use pitch bend; use the standard +/- 2 semitone range.
     const double bend = (static_cast<double>(pitchWheel) - 8192.0) / 8192.0;
-    playbackRatio = basePlaybackRatio * std::pow(2.0, (bend * 2.0) / 12.0);
+    double cordPitchSemitones = 0.0;
+    if (sample != nullptr && sample->parameters != nullptr)
+    {
+        for (const auto& cord : sample->parameters->modulationCords)
+        {
+            // Emulator X3 PatchCord source 17 = Mod Wheel, destination 48 = Pitch.
+            // The manual's pitch chart specifies 3.125 cord-amount units per semitone.
+            if (cord.source == 17 && cord.destination == 48)
+                cordPitchSemitones += (static_cast<double>(modWheelValue) / 127.0)
+                                    * static_cast<double>(cord.amount) / 3.125;
+        }
+    }
+
+    playbackRatio = basePlaybackRatio
+                  * std::pow(2.0, ((bend * 2.0) + cordPitchSemitones) / 12.0);
 }
 
 void EblSamplerVoice::startNote(int midiNoteNumber, float velocity, juce::SynthesiserSound* sound,
@@ -53,6 +67,7 @@ void EblSamplerVoice::startNote(int midiNoteNumber, float velocity, juce::Synthe
     releaseSamplesRemaining = 0;
     releaseSamplesTotal = juce::jmax(1, static_cast<int>(getSampleRate() * 0.12));
     pitchWheel = juce::jlimit(0, 16383, currentPitchWheelPosition);
+    modWheelValue = 0;
 
     const double semitones = static_cast<double>(midiNoteNumber - eblSound->rootNote);
     basePlaybackRatio = std::pow(2.0, semitones / 12.0)
@@ -84,7 +99,14 @@ void EblSamplerVoice::pitchWheelMoved(int newPitchWheelValue)
     updatePlaybackRatio();
 }
 
-void EblSamplerVoice::controllerMoved(int, int) {}
+void EblSamplerVoice::controllerMoved(int controllerNumber, int newControllerValue)
+{
+    if (controllerNumber == 1)
+    {
+        modWheelValue = juce::jlimit(0, 127, newControllerValue);
+        updatePlaybackRatio();
+    }
+}
 
 void EblSamplerVoice::beginAmplitudeRelease()
 {
