@@ -1,7 +1,6 @@
 #pragma once
 
 #include <juce_core/juce_core.h>
-#include <string>
 #include <vector>
 
 struct ExbPreset
@@ -15,6 +14,7 @@ struct ExbBankInfo
     juce::File file;
     juce::String bankName;
     juce::String error;
+    int sampleCount = 0;
     std::vector<ExbPreset> presets;
 
     bool isValid() const { return error.isEmpty(); }
