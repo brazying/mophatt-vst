@@ -28,16 +28,20 @@ void EblSamplerVoice::startNote(int midiNoteNumber, float velocity, juce::Synthe
 
     sample = eblSound->data;
     position = 0.0;
-    amplitudeEnvelope = eblSound->parameters.envelopes[0];
-    useProgramEnvelope = amplitudeEnvelope.valid;
-    programGain = juce::Decibels::decibelsToGain(eblSound->parameters.ampGainDb);
+    useProgramEnvelope = eblSound->parameters != nullptr
+                      && eblSound->parameters->envelopes[0].valid;
+    if (useProgramEnvelope)
+        amplitudeEnvelope = eblSound->parameters->envelopes[0];
+    programGain = eblSound->parameters != nullptr && eblSound->parameters->hasAmplitude
+                ? juce::Decibels::decibelsToGain(eblSound->parameters->amplitude)
+                : 1.0f;
     envelopeStage = 0;
     envelopeStageElapsed = 0;
     envelopeLevel = 0.0f;
     envelopeStageStart = 0.0f;
     if (useProgramEnvelope)
     {
-        const float rate = amplitudeEnvelope.rates[0];
+        const float rate = amplitudeEnvelope.stages[0].rate;
         const double seconds = 0.001 * std::pow(10000.0, static_cast<double>(rate));
         envelopeStageSamples = juce::jmax(1, static_cast<int>(getSampleRate() * seconds));
     }
@@ -87,7 +91,7 @@ void EblSamplerVoice::beginAmplitudeRelease()
     envelopeStage = 4;
     envelopeStageElapsed = 0;
     envelopeStageStart = envelopeLevel;
-    const float rate = amplitudeEnvelope.rates[4];
+    const float rate = amplitudeEnvelope.stages[4].rate;
     const double seconds = 0.001 * std::pow(10000.0, static_cast<double>(rate));
     envelopeStageSamples = juce::jmax(1, static_cast<int>(getSampleRate() * seconds));
 }
@@ -98,7 +102,7 @@ float EblSamplerVoice::nextAmplitudeEnvelopeSample()
         return 0.0f;
 
     const auto stage = static_cast<size_t>(envelopeStage);
-    const float target = amplitudeEnvelope.levels[stage] * 0.01f;
+    const float target = amplitudeEnvelope.stages[stage].level * 0.01f;
     const float progress = juce::jlimit(0.0f, 1.0f,
         static_cast<float>(++envelopeStageElapsed) / static_cast<float>(envelopeStageSamples));
     envelopeLevel = envelopeStageStart + (target - envelopeStageStart) * progress;
@@ -115,7 +119,7 @@ float EblSamplerVoice::nextAmplitudeEnvelopeSample()
 
         if (envelopeStage < 6)
         {
-            const float rate = amplitudeEnvelope.rates[static_cast<size_t>(envelopeStage)];
+            const float rate = amplitudeEnvelope.stages[static_cast<size_t>(envelopeStage)].rate;
             const double seconds = 0.001 * std::pow(10000.0, static_cast<double>(rate));
             envelopeStageSamples = juce::jmax(1, static_cast<int>(getSampleRate() * seconds));
         }
