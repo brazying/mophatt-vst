@@ -44,7 +44,8 @@ bool MoPhattVSTAudioProcessor::addBank(const juce::File& file, juce::String& mes
         }
     }
 
-    message = "Loaded " + bank.bankName + " — " + juce::String(static_cast<int>(bank.presets.size())) + " preset labels found.";
+    message = "Loaded " + bank.bankName + " — "
+            + juce::String(static_cast<int>(bank.presets.size())) + " preset labels found.";
     banks.push_back(std::move(bank));
     return true;
 }
@@ -67,7 +68,7 @@ void MoPhattVSTAudioProcessor::setStateInformation(const void* data, int sizeInB
     if (xml == nullptr || !xml->hasTagName("MOPHATT_VST_STATE"))
         return;
 
-    for (auto* node : xml->getChildIterator())
+    for (auto* node = xml->getFirstChildElement(); node != nullptr; node = node->getNextElement())
     {
         if (node->hasTagName("BANK"))
         {
