@@ -44,11 +44,18 @@ public:
     void renderNextBlock(juce::AudioBuffer<float>& output, int startSample, int numSamples) override;
 
 private:
+    void updatePlaybackRatio();
+
     std::shared_ptr<EblSample> sample;
     double position = 0.0;
+    double basePlaybackRatio = 1.0;
     double playbackRatio = 1.0;
     float noteLevel = 1.0f;
+    float attackLevel = 0.0f;
     bool releasing = false;
+    int pitchWheel = 8192;
     int releaseSamplesRemaining = 0;
     int releaseSamplesTotal = 1;
+    int attackSamplesElapsed = 0;
+    int attackSamplesTotal = 1;
 };
