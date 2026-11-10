@@ -31,3 +31,24 @@ public:
     int velocityHigh = 127;
     int rootNote = 60;
 };
+
+class EblSamplerVoice : public juce::SynthesiserVoice
+{
+public:
+    bool canPlaySound(juce::SynthesiserSound* sound) override;
+    void startNote(int midiNoteNumber, float velocity, juce::SynthesiserSound* sound,
+                   int currentPitchWheelPosition) override;
+    void stopNote(float velocity, bool allowTailOff) override;
+    void pitchWheelMoved(int newPitchWheelValue) override;
+    void controllerMoved(int controllerNumber, int newControllerValue) override;
+    void renderNextBlock(juce::AudioBuffer<float>& output, int startSample, int numSamples) override;
+
+private:
+    std::shared_ptr<EblSample> sample;
+    double position = 0.0;
+    double playbackRatio = 1.0;
+    float noteLevel = 1.0f;
+    bool releasing = false;
+    int releaseSamplesRemaining = 0;
+    int releaseSamplesTotal = 1;
+};
