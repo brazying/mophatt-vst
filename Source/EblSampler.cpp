@@ -28,6 +28,19 @@ void EblSamplerVoice::startNote(int midiNoteNumber, float velocity, juce::Synthe
 
     sample = eblSound->data;
     position = 0.0;
+    amplitudeEnvelope = eblSound->parameters.envelopes[0];
+    useProgramEnvelope = amplitudeEnvelope.valid;
+    programGain = juce::Decibels::decibelsToGain(eblSound->parameters.ampGainDb);
+    envelopeStage = 0;
+    envelopeStageElapsed = 0;
+    envelopeLevel = 0.0f;
+    envelopeStageStart = 0.0f;
+    if (useProgramEnvelope)
+    {
+        const float rate = amplitudeEnvelope.rates[0];
+        const double seconds = 0.001 * std::pow(10000.0, static_cast<double>(rate));
+        envelopeStageSamples = juce::jmax(1, static_cast<int>(getSampleRate() * seconds));
+    }
     noteLevel = velocity;
     attackLevel = 0.0f;
     attackSamplesElapsed = 0;
@@ -56,6 +69,8 @@ void EblSamplerVoice::stopNote(float, bool allowTailOff)
     {
         releasing = true;
         releaseSamplesRemaining = releaseSamplesTotal;
+        if (useProgramEnvelope)
+            beginAmplitudeRelease();
     }
 }
 
@@ -66,6 +81,48 @@ void EblSamplerVoice::pitchWheelMoved(int newPitchWheelValue)
 }
 
 void EblSamplerVoice::controllerMoved(int, int) {}
+
+void EblSamplerVoice::beginAmplitudeRelease()
+{
+    envelopeStage = 4;
+    envelopeStageElapsed = 0;
+    envelopeStageStart = envelopeLevel;
+    const float rate = amplitudeEnvelope.rates[4];
+    const double seconds = 0.001 * std::pow(10000.0, static_cast<double>(rate));
+    envelopeStageSamples = juce::jmax(1, static_cast<int>(getSampleRate() * seconds));
+}
+
+float EblSamplerVoice::nextAmplitudeEnvelopeSample()
+{
+    if (!useProgramEnvelope || envelopeStage >= 6)
+        return 0.0f;
+
+    const auto stage = static_cast<size_t>(envelopeStage);
+    const float target = amplitudeEnvelope.levels[stage] * 0.01f;
+    const float progress = juce::jlimit(0.0f, 1.0f,
+        static_cast<float>(++envelopeStageElapsed) / static_cast<float>(envelopeStageSamples));
+    envelopeLevel = envelopeStageStart + (target - envelopeStageStart) * progress;
+
+    if (envelopeStageElapsed >= envelopeStageSamples)
+    {
+        envelopeLevel = target;
+        ++envelopeStage;
+        envelopeStageElapsed = 0;
+        envelopeStageStart = envelopeLevel;
+
+        if (!releasing && envelopeStage > 3)
+            envelopeStage = 3;
+
+        if (envelopeStage < 6)
+        {
+            const float rate = amplitudeEnvelope.rates[static_cast<size_t>(envelopeStage)];
+            const double seconds = 0.001 * std::pow(10000.0, static_cast<double>(rate));
+            envelopeStageSamples = juce::jmax(1, static_cast<int>(getSampleRate() * seconds));
+        }
+    }
+
+    return juce::jlimit(0.0f, 1.0f, envelopeLevel);
+}
 
 void EblSamplerVoice::renderNextBlock(juce::AudioBuffer<float>& output, int startSample, int numSamples)
 {
@@ -104,17 +161,23 @@ void EblSamplerVoice::renderNextBlock(juce::AudioBuffer<float>& output, int star
         const int i3 = juce::jlimit(0, sourceFrames - 1, index + 2);
 
         float envelope = 1.0f;
-        if (!releasing && attackSamplesElapsed < attackSamplesTotal)
+        if (useProgramEnvelope)
+        {
+            envelope = nextAmplitudeEnvelopeSample();
+            if (releasing && envelopeStage >= 6)
+            {
+                clearCurrentNote();
+                sample.reset();
+                break;
+            }
+        }
+        else if (!releasing && attackSamplesElapsed < attackSamplesTotal)
         {
             attackLevel = static_cast<float>(++attackSamplesElapsed)
                         / static_cast<float>(attackSamplesTotal);
             envelope = attackLevel;
         }
-        else if (!releasing)
-        {
-            envelope = 1.0f;
-        }
-        else
+        else if (releasing)
         {
             envelope = static_cast<float>(releaseSamplesRemaining)
                      / static_cast<float>(releaseSamplesTotal);
@@ -126,7 +189,7 @@ void EblSamplerVoice::renderNextBlock(juce::AudioBuffer<float>& output, int star
             }
         }
 
-        const float gain = noteLevel * juce::jlimit(0.0f, 1.0f, envelope);
+        const float gain = noteLevel * programGain * juce::jlimit(0.0f, 1.0f, envelope);
         for (int channel = 0; channel < outputChannels; ++channel)
         {
             const int sourceChannel = sourceChannels == 1 ? 0 : juce::jmin(channel, sourceChannels - 1);
