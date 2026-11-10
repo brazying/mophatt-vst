@@ -122,7 +122,7 @@ bool MoPhattVSTAudioProcessor::loadPreset(int bankIndex, int presetIndex, juce::
 
         sounds.push_back(std::make_unique<EblSamplerSound>(
             sample->second, zone.keyLow, zone.keyHigh,
-            zone.velocityLow, zone.velocityHigh, zone.rootNote, zone.parameters));
+            zone.velocityLow, zone.velocityHigh, zone.rootNote, zone.voiceParameters));
     }
 
     if (sounds.empty())
