@@ -10,8 +10,14 @@ void EblSamplerVoice::startNote(int midiNoteNumber, float velocity, juce::Synthe
                                 int)
 {
     auto* eblSound = dynamic_cast<EblSamplerSound*>(sound);
-    if (eblSound == nullptr || eblSound->data == nullptr)
+    if (eblSound == nullptr || eblSound->data == nullptr
+        || velocity * 127.0f < eblSound->velocityLow
+        || velocity * 127.0f > eblSound->velocityHigh)
+    {
+        clearCurrentNote();
+        sample.reset();
         return;
+    }
 
     sample = eblSound->data;
     position = 0.0;
@@ -20,7 +26,7 @@ void EblSamplerVoice::startNote(int midiNoteNumber, float velocity, juce::Synthe
     releaseSamplesRemaining = 0;
     releaseSamplesTotal = juce::jmax(1, static_cast<int>(getSampleRate() * 0.12));
 
-    const double semitones = static_cast<double>(midiNoteNumber - sample->rootNote);
+    const double semitones = static_cast<double>(midiNoteNumber - eblSound->rootNote);
     playbackRatio = std::pow(2.0, semitones / 12.0)
                   * static_cast<double>(sample->sampleRate) / getSampleRate();
 }
