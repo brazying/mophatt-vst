@@ -39,11 +39,15 @@ namespace
         {
             const size_t declaredSize = static_cast<size_t>(readBE32(data + cursor + 4));
             const size_t payloadStart = cursor + 8;
-            if (declaredSize > end - payloadStart)
-                break;
+            const size_t availableSize = end - payloadStart;
+            const size_t actualSize = juce::jmin(declaredSize, availableSize);
 
             chunks.push_back({ juce::String::fromUTF8(reinterpret_cast<const char*>(data + cursor), 4),
-                               payloadStart, payloadStart + declaredSize });
+                               payloadStart, payloadStart + actualSize });
+
+            if (declaredSize > availableSize)
+                break;
+
             cursor = payloadStart + declaredSize;
         }
         return chunks;
