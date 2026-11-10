@@ -1,7 +1,47 @@
 #pragma once
 
 #include <juce_core/juce_core.h>
+#include <array>
+#include <memory>
 #include <vector>
+
+struct ExbEnvelopeStage
+{
+    float rate = 0.0f;
+    float level = 0.0f;
+};
+
+struct ExbEnvelope
+{
+    std::array<ExbEnvelopeStage, 6> stages {};
+    bool valid = false;
+};
+
+struct ExbFilterParameters
+{
+    int type = 0;
+    float frequency = 0.0f;
+    float resonance = 0.0f;
+    bool valid = false;
+};
+
+struct ExbModulationCord
+{
+    int source = 0;
+    int destination = 0;
+    float amount = 0.0f;
+};
+
+struct ExbVoiceParameters
+{
+    ExbFilterParameters filter;
+    std::array<ExbEnvelope, 3> envelopes;
+    std::vector<ExbModulationCord> modulationCords;
+    std::vector<std::vector<juce::uint8>> lfoData;
+    std::vector<std::vector<juce::uint8>> functionGeneratorData;
+    float amplitude = 1.0f;
+    bool hasAmplitude = false;
+};
 
 struct ExbZone
 {
@@ -11,6 +51,7 @@ struct ExbZone
     int keyHigh = 127;
     int velocityLow = 0;
     int velocityHigh = 127;
+    std::shared_ptr<const ExbVoiceParameters> voiceParameters;
 };
 
 struct ExbPreset
