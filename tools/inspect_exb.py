@@ -37,6 +37,7 @@ def main(path):
     list_counts = collections.Counter()
     chunk_counts = collections.Counter()
     sample_ids = collections.Counter()
+    sample_links = []
     preset_examples = []
     raw_examples = collections.defaultdict(list)
 
@@ -44,6 +45,12 @@ def main(path):
         e = b[p:p+78]
         tag = e[:4].decode("ascii", "replace")
         toc_counts[tag] += 1
+        if tag == "E5SL":
+            link_offset = be32(e, 8)
+            if link_offset + 14 <= len(b) and b[link_offset:link_offset+4] == b"E5SL":
+                body = link_offset + 8
+                sample_links.append((be16(b, body), be32(b, body+2)))
+            continue
         if tag != "E5P1": continue
         name = e[14:78].decode("utf-16le", "replace").split("\0")[0]
         preset_offset = be32(e, 8)
@@ -99,6 +106,11 @@ def main(path):
         print("RAW", tag, "examples", len(values))
         for value in values: print(value)
     print("FIRST SAMPLE IDS", sample_ids.most_common(40))
+    print("FIRST E5SL LINKS (slot, sample_index)", sample_links[:60])
+    print("E5SL SLOT RANGE", (min((x[0] for x in sample_links), default=None), max((x[0] for x in sample_links), default=None)))
+    print("E5SL SAMPLE INDEX RANGE", (min((x[1] for x in sample_links), default=None), max((x[1] for x in sample_links), default=None)))
+    print("ZONE IDS MATCH E5SL SLOTS", sum(1 for sid in sample_ids if sid in {x[0] for x in sample_links}), "of", len(sample_ids))
+    print("ZONE IDS MATCH E5SL SAMPLE INDICES", sum(1 for sid in sample_ids if sid in {x[1] for x in sample_links}), "of", len(sample_ids))
 
 if __name__ == "__main__":
     main(sys.argv[1] if len(sys.argv) > 1 else "Xtreme Lead-1.exb")
